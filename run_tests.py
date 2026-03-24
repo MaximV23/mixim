@@ -32,10 +32,10 @@ TOPOLOGY        = 'stratified'
 FULLY_CONNECTED = True
 ROUTING         = 'source'
 E2E_LATENCY     = 1.0          # target end-to-end latency budget
-THRESHOLD       = 10          # pool fires when it holds this many messages
-FLUSH_PERCENT   = 0.5          # fraction forwarded on each flush
+THRESHOLD       = 100          # pool fires when it holds this many messages
+FLUSH_PERCENT   = 0.1          # fraction forwarded on each flush
 FLUSH_TIMEOUT   = 2.0
-SIM_DURATION    = 100
+SIM_DURATION    = 50
 
 # Dummies disabled for a clean baseline measurement
 CLIENT_DUMMIES       = False
