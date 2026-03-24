@@ -184,14 +184,25 @@ class Simulation(object):
         else:
             pass
 
-        entropy = []
-        for i in range(0, self.n_targets):
-            entropy.append(0.0)
-        tableProb = df_received_messages['MessageTarget'].to_numpy(copy=True)
-        for j in range(0, self.n_targets):
-            for m in range(len(tableProb)):
-                if tableProb[m][j] != 0:
-                    entropy[j] += - tableProb[m][j] * np.log2(tableProb[m][j])
+        # Sender-anonymity entropy: H = -Σ_c P(client c sent target j) * log2(P(c))
+        # P(client c sent target j) = Σ_{m: sender(m)==c}  pr_target[m][j]
+        # This is bounded by log2(n_clients). The previous calculation summed
+        # -p*log2(p) over received *messages* (not senders), which can exceed
+        # log2(n_clients) because there are far more messages than clients.
+        entropy = [0.0] * self.n_targets
+        table_prob  = df_received_messages['MessageTarget'].to_numpy(copy=True)
+        table_route = df_received_messages['MessageRoute'].to_numpy(copy=True)
+        for j in range(self.n_targets):
+            sender_prob = {}   # sender_id -> P(that sender sent target j)
+            for m in range(len(table_prob)):
+                p = table_prob[m][j]
+                if p > 0:
+                    sender = table_route[m][0]   # route[0] is always the originating Client
+                    sid = sender.id if hasattr(sender, 'id') else sender
+                    sender_prob[sid] = sender_prob.get(sid, 0.0) + p
+            for p_c in sender_prob.values():
+                if p_c > 0:
+                    entropy[j] += -p_c * np.log2(p_c)
 
         dict_entropy = {'Entropy': entropy}
         df_entropy = pd.DataFrame(dict_entropy)

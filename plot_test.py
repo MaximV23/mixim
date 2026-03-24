@@ -2,7 +2,7 @@
 Parameter sweep:
   n_layers:          [1, 5, 10]
   n_mixes_per_layer: [1, 5, 10]
-  corruption:        [0, 10, 20, 30, 50] % of total mixes
+  corrupt_counts:    [0, 1, 3, 5]  absolute number of compromised nodes
   n_runs:            3 per config  (for error bars)
 
 Adaptive threshold: ceil(n_mixes / flush_percent)
@@ -10,10 +10,10 @@ Adaptive threshold: ceil(n_mixes / flush_percent)
     starvation at deeper layers.
 
 Figures produced:
-  A  entropy vs % compromised  — one subplot per layer count, lines per mixes/layer
-  B  entropy vs mixes/layer    — lines per layer count, panels for 0% and 30% corruption
-  C  entropy vs layers         — lines per mixes/layer, panels for 0% and 30% corruption
-  D  heatmap layers×mixes      — at 0% and 50% corruption
+  A  entropy vs # compromised  — one subplot per layer count, lines per mixes/layer
+  B  entropy vs mixes/layer    — lines per layer count, panels for 0 and 3 corrupt
+  C  entropy vs layers         — lines per mixes/layer, panels for 0 and 3 corrupt
+  D  heatmap layers×mixes      — at 0 and 5 corrupt nodes
 """
 
 import math
@@ -53,7 +53,7 @@ N_RUNS = 3   # repetitions per config — used for error bars
 # ── Sweep parameters ──────────────────────────────────────────────────────────
 LAYERS_SWEEP  = [1, 5, 10]
 MIXES_SWEEP   = [1, 5, 10]
-CORRUPT_FRACS = [0.0, 0.1, 0.2, 0.3, 0.5]   # fraction of total mixes to corrupt
+CORRUPT_COUNTS = [0, 1, 3, 5]   # absolute number of compromised mix nodes
 
 MAX_ENTROPY = math.log2(N_CLIENTS)   # ≈ 6.644 bits — full anonymity ceiling
 LOG_DIR     = 'Logs/'
@@ -129,9 +129,8 @@ def run_single(params):
 
 def build_configs():
     configs = []
-    for n_layers, n_mixes, frac in itertools.product(LAYERS_SWEEP, MIXES_SWEEP, CORRUPT_FRACS):
-        total          = n_layers * n_mixes
-        corrupt_count  = min(int(round(frac * total)), total)
+    for n_layers, n_mixes, corrupt_count in itertools.product(
+            LAYERS_SWEEP, MIXES_SWEEP, CORRUPT_COUNTS):
         for run_idx in range(N_RUNS):
             configs.append((n_layers, n_mixes, corrupt_count, run_idx))
     return configs
@@ -176,10 +175,8 @@ def aggregate(df):
 
 # ── Lookup helper ─────────────────────────────────────────────────────────────
 
-def lookup(agg, n_layers, n_mixes, frac):
-    """Return (entropy_avg, entropy_sem) for the config closest to frac."""
-    total        = n_layers * n_mixes
-    corrupt_count = min(int(round(frac * total)), total)
+def lookup(agg, n_layers, n_mixes, corrupt_count):
+    """Return (entropy_avg, entropy_sem) for the given config."""
     row = agg[(agg['n_layers']      == n_layers)  &
               (agg['n_mixes']       == n_mixes)    &
               (agg['corrupt_count'] == corrupt_count)]
@@ -195,7 +192,7 @@ def fig_a(agg):
     Directly answers: can the GPA + corrupt-node adversary find the sender?"""
     fig, axes = plt.subplots(1, len(LAYERS_SWEEP), figsize=(14, 4.5), sharey=True)
     fig.suptitle(
-        'Figure A — Entropy vs Fraction of Compromised Nodes\n'
+        'Figure A — Entropy vs Number of Compromised Nodes\n'
         f'Pool mix · {N_CLIENTS} clients · {LAMBDA_C} msg/s · stratified topology',
         fontsize=10)
 
@@ -205,10 +202,10 @@ def fig_a(agg):
     for ax, n_layers in zip(axes, LAYERS_SWEEP):
         for n_mixes in MIXES_SWEEP:
             sub = agg[(agg['n_layers'] == n_layers) &
-                      (agg['n_mixes']  == n_mixes)].sort_values('corrupt_frac')
+                      (agg['n_mixes']  == n_mixes)].sort_values('corrupt_count')
             if sub.empty:
                 continue
-            x    = sub['corrupt_frac'] * 100
+            x    = sub['corrupt_count']
             y    = sub['entropy_avg']
             yerr = sub['entropy_sem']
             ax.plot(x, y,
@@ -220,7 +217,8 @@ def fig_a(agg):
         ax.axhline(MAX_ENTROPY, color='dimgrey', linestyle=':', linewidth=1,
                    label='Max H (full anon)')
         ax.set_title(f'{n_layers} layer{"s" if n_layers > 1 else ""}', fontsize=10)
-        ax.set_xlabel('Compromised mixes (%)')
+        ax.set_xlabel('Compromised mixes (count)')
+        ax.set_xticks(CORRUPT_COUNTS)
         ax.set_ylim(bottom=-0.3)
         ax.grid(True, alpha=0.25)
         ax.legend(fontsize=8, loc='upper right')
@@ -233,10 +231,10 @@ def fig_a(agg):
 # ── Figure B — Entropy vs mixes/layer ────────────────────────────────────────
 
 def fig_b(agg):
-    """One subplot per corruption level (0% / 30%).  Lines = layer count.
+    """One subplot per corruption level (0 / 3 nodes).  Lines = layer count.
     Answers: does making the network wider improve anonymity?"""
-    show_fracs   = [0.0, 0.3]
-    frac_labels  = ['0% corrupted', '30% corrupted']
+    show_counts  = [0, 3]
+    count_labels = ['0 compromised', '3 compromised']
     layer_colors = {1: '#1f77b4', 5: '#ff7f0e', 10: '#2ca02c'}
 
     fig, axes = plt.subplots(1, 2, figsize=(10, 4.5), sharey=True)
@@ -245,11 +243,11 @@ def fig_b(agg):
         f'Pool mix · {N_CLIENTS} clients · {LAMBDA_C} msg/s',
         fontsize=10)
 
-    for ax, frac, label in zip(axes, show_fracs, frac_labels):
+    for ax, count, label in zip(axes, show_counts, count_labels):
         for n_layers in LAYERS_SWEEP:
             xs, ys, es = [], [], []
             for n_mixes in MIXES_SWEEP:
-                y, e = lookup(agg, n_layers, n_mixes, frac)
+                y, e = lookup(agg, n_layers, n_mixes, count)
                 if y is not None:
                     xs.append(n_mixes)
                     ys.append(y)
@@ -277,10 +275,10 @@ def fig_b(agg):
 # ── Figure C — Entropy vs layers ─────────────────────────────────────────────
 
 def fig_c(agg):
-    """One subplot per corruption level (0% / 30%).  Lines = mixes/layer.
+    """One subplot per corruption level (0 / 3 nodes).  Lines = mixes/layer.
     Answers: does making the network deeper improve anonymity?"""
-    show_fracs  = [0.0, 0.3]
-    frac_labels = ['0% corrupted', '30% corrupted']
+    show_counts  = [0, 3]
+    count_labels = ['0 compromised', '3 compromised']
     mix_colors  = {1: '#d62728', 5: '#9467bd', 10: '#8c564b'}
     mix_markers = {1: 'o',       5: 's',       10: '^'}
 
@@ -290,11 +288,11 @@ def fig_c(agg):
         f'Pool mix · {N_CLIENTS} clients · {LAMBDA_C} msg/s',
         fontsize=10)
 
-    for ax, frac, label in zip(axes, show_fracs, frac_labels):
+    for ax, count, label in zip(axes, show_counts, count_labels):
         for n_mixes in MIXES_SWEEP:
             xs, ys, es = [], [], []
             for n_layers in LAYERS_SWEEP:
-                y, e = lookup(agg, n_layers, n_mixes, frac)
+                y, e = lookup(agg, n_layers, n_mixes, count)
                 if y is not None:
                     xs.append(n_layers)
                     ys.append(y)
@@ -325,8 +323,8 @@ def fig_d(agg):
     """Heatmap: rows = layers, cols = mixes/layer, colour = entropy.
     Side-by-side at 0% and 50% corruption shows how the topology's
     anonymity surface collapses under a strong adversary."""
-    fracs  = [0.0, 0.5]
-    titles = ['0% corrupted', '50% corrupted']
+    show_counts = [0, 5]
+    titles      = ['0 compromised', '5 compromised']
 
     fig, axes = plt.subplots(1, 2, figsize=(10, 3.5))
     fig.suptitle(
@@ -336,11 +334,11 @@ def fig_d(agg):
 
     vmax = MAX_ENTROPY + 1.5
 
-    for ax, frac, title in zip(axes, fracs, titles):
+    for ax, count, title in zip(axes, show_counts, titles):
         matrix = np.full((len(LAYERS_SWEEP), len(MIXES_SWEEP)), np.nan)
         for i, n_layers in enumerate(LAYERS_SWEEP):
             for j, n_mixes in enumerate(MIXES_SWEEP):
-                y, _ = lookup(agg, n_layers, n_mixes, frac)
+                y, _ = lookup(agg, n_layers, n_mixes, count)
                 if y is not None:
                     matrix[i, j] = y
 
@@ -384,7 +382,7 @@ def main():
 
     print("\nAggregated results:")
     pd.set_option('display.float_format', '{:.3f}'.format)
-    print(agg[['n_layers', 'n_mixes', 'corrupt_frac',
+    print(agg[['n_layers', 'n_mixes', 'corrupt_count',
                'entropy_avg', 'entropy_sem', 'n_valid_runs']].to_string(index=False))
 
     print("\nGenerating figures …")
