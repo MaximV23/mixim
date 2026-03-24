@@ -209,7 +209,8 @@ class Simulation(object):
         for re, le in zip(self.Log.received_messages["MessageTimeReceived"],
                           self.Log.received_messages["MessageTimeLeft"]):
             sum_delays += (re - le)
-        average_delay = sum_delays / len(self.Log.received_messages["MessageTimeReceived"])
+        n_received = len(self.Log.received_messages["MessageTimeReceived"])
+        average_delay = sum_delays / n_received if n_received > 0 else 0.0
         if self.printing:
             print('----------Simulation Stats----------')
             # print('Average Latency: {}'.format(latency))

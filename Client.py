@@ -81,7 +81,7 @@ class Client:
                     route.append(node)
                     route_ids.append((node.id))
         delays += [0]
-        receiver = sample(self.other_clients, k=1)[0]
+        receiver = sample(sorted(self.other_clients, key=lambda c: c.id), k=1)[0]
         route += [receiver]
         route_ids += [receiver.id]
 

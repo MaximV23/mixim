@@ -35,7 +35,7 @@ class Mix:
                 route.append(choice(network_dict[layer]))
                 delays.append(exponential(self.simulation.mu))
         delays += [0]
-        newstop = sample(self.simulation.clientsSet, k=1)[0]
+        newstop = sample(sorted(self.simulation.clientsSet, key=lambda c: c.id), k=1)[0]
         route += [newstop]
         pr_target = []
         for j in range(0, self.n_targets):
